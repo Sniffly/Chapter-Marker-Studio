@@ -10,6 +10,9 @@ Chapter Marker Studio is a simple Python GUI for managing video chapter metadata
 - Scan for and edit  existing markers
 - Scan for black frames (powered by `mkchap` by Jason Doves).
 
+## Changes from original
+- Added XML file export (for use with ErsatzTV)
+
 ## Status & License
 This project is open source and free to use. Feel free to fork and edit the code.
 
