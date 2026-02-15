@@ -6,11 +6,12 @@ import json
 import logging
 import shutil
 import re
-from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, 
-                               QVBoxLayout, QHBoxLayout, QWidget, 
+import xml.etree.ElementTree as ET
+from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel,
+                               QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QFileDialog, QSlider, QFrame,
                                QListWidget, QListWidgetItem, QLineEdit,
-                               QGroupBox, QProgressBar, QMessageBox, 
+                               QGroupBox, QProgressBar, QMessageBox,
                                QTimeEdit, QDoubleSpinBox)
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -33,7 +34,7 @@ except ImportError:
 class FrameStepTimeEdit(QTimeEdit):
     def stepBy(self, steps):
         if self.currentSectionIndex() == 3:
-            offset = steps * 42 
+            offset = steps * 42
             new_time = self.time().addMSecs(offset)
             self.setTime(new_time)
         else:
@@ -42,18 +43,18 @@ class FrameStepTimeEdit(QTimeEdit):
 class ChapterSlider(QSlider):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
-        self.markers = [] 
+        self.markers = []
 
     def set_markers(self, markers):
         self.markers = markers
-        self.update() 
+        self.update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
         if not self.markers or self.maximum() <= 0:
             return
         painter = QPainter(self)
-        pen = QPen(QColor(0, 191, 255)) 
+        pen = QPen(QColor(0, 191, 255))
         pen.setWidth(2)
         painter.setPen(pen)
         for ms in self.markers:
@@ -79,9 +80,9 @@ class ChapterStudio(QMainWindow):
         super().__init__()
         self.setWindowTitle("Chapter Marker Studio")
         self.resize(1400, 950)
-        
+
         logging.info("Application Initializing...")
-        
+
         pygame.mixer.pre_init(frequency=48000, size=-16, channels=2, buffer=2048)
         pygame.init()
 
@@ -89,13 +90,13 @@ class ChapterStudio(QMainWindow):
         self.active_video_path = None
         self.video_duration_ms = 0
         self.mkchap_path = os.path.expanduser("~/mkchap/bin/Debug/net8.0/mkchap")
-        
+
         self.hotkey_filter = GlobalHotkeyFilter(self, self.handle_global_hotkeys)
         qApp.installEventFilter(self.hotkey_filter)
 
         self.scan_process = QProcess(self)
         self.save_process = QProcess(self)
-        
+
         self.scan_process.readyReadStandardOutput.connect(self.handle_scan_output)
         self.scan_process.readyReadStandardError.connect(self.handle_scan_output)
         self.scan_process.finished.connect(self.on_scan_process_finished)
@@ -125,7 +126,7 @@ class ChapterStudio(QMainWindow):
         player_suite = QFrame()
         player_suite.setStyleSheet("background-color: #1a1a1a; border-radius: 4px;")
         suite_layout = QVBoxLayout(player_suite)
-        
+
         self.slider = ChapterSlider(Qt.Orientation.Horizontal)
         self.slider.sliderPressed.connect(self.on_slider_pressed)
         self.slider.sliderReleased.connect(self.on_slider_released)
@@ -134,7 +135,7 @@ class ChapterStudio(QMainWindow):
 
         ctrl_row = QHBoxLayout()
         btn_style = "QPushButton { background-color: #333; color: white; border: 1px solid #555; padding: 8px 20px; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #444; } "
-        
+
         self.btn_play = QPushButton("Play")
         self.btn_play.setStyleSheet(btn_style)
         self.btn_play.clicked.connect(self.toggle_playback)
@@ -148,8 +149,8 @@ class ChapterStudio(QMainWindow):
         self.time_label = QLabel("00:00:00.000")
         self.time_label.setStyleSheet("font-family: monospace; font-size: 24px; color: #00FF00; padding: 0 20px;")
         ctrl_row.addWidget(self.time_label)
-        ctrl_row.addStretch() 
-        
+        ctrl_row.addStretch()
+
         self.btn_add_marker = QPushButton("+ Add Marker (M)")
         self.btn_add_marker.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px 15px;")
         self.btn_add_marker.clicked.connect(self.add_manual_marker)
@@ -160,11 +161,11 @@ class ChapterStudio(QMainWindow):
         master_layout.addLayout(left_column, stretch=3)
 
         right_column = QVBoxLayout()
-        
+
         scan_group = QGroupBox("Video Analysis Settings")
         scan_layout = QVBoxLayout()
         settings_row = QHBoxLayout()
-        
+
         v_thresh = QVBoxLayout()
         v_thresh.addWidget(QLabel("Black Threshold (0.01 - 1.0):"))
         self.spin_thresh = QDoubleSpinBox()
@@ -173,7 +174,7 @@ class ChapterStudio(QMainWindow):
         self.spin_thresh.setSingleStep(0.01)
         v_thresh.addWidget(self.spin_thresh)
         settings_row.addLayout(v_thresh)
-        
+
         v_dur = QVBoxLayout()
         v_dur.addWidget(QLabel("Min Duration (s) (0.10 - 10.0):"))
         self.spin_dur = QDoubleSpinBox()
@@ -182,13 +183,13 @@ class ChapterStudio(QMainWindow):
         self.spin_dur.setValue(0.5)
         v_dur.addWidget(self.spin_dur)
         settings_row.addLayout(v_dur)
-        
+
         scan_layout.addLayout(settings_row)
         self.btn_run_scan = QPushButton("SCAN VIDEO FILE FOR BLACK FRAMES")
         self.btn_run_scan.setStyleSheet("background-color: #3d5afe; color: black; height: 40px;")
         self.btn_run_scan.clicked.connect(self.confirm_scan)
         scan_layout.addWidget(self.btn_run_scan)
-        
+
         self.scan_progress = QProgressBar()
         self.scan_progress.setVisible(False)
         self.scan_label = QLabel("")
@@ -223,7 +224,7 @@ class ChapterStudio(QMainWindow):
         edit_layout.addWidget(self.edit_name)
         edit_layout.addWidget(QLabel("Adjust Timestamp:"))
         edit_layout.addLayout(nudge_layout)
-        
+
         self.btn_rem_marker = QPushButton("Delete Selected Marker (R)")
         self.btn_rem_marker.setStyleSheet("background-color: #ff0000; color: black; bold;")
         self.btn_rem_marker.clicked.connect(self.remove_selected_marker)
@@ -235,7 +236,12 @@ class ChapterStudio(QMainWindow):
         self.btn_save_video.setStyleSheet("background-color: #ef6c00; color: black; height: 50px;")
         self.btn_save_video.clicked.connect(self.confirm_write)
         right_column.addWidget(self.btn_save_video)
-        
+
+        self.btn_save_xml = QPushButton("WRITE CHAPTERS TO XML FILE")
+        self.btn_save_xml.setStyleSheet("background-color: #ef6c00; color: black; height: 50px;")
+        self.btn_save_xml.clicked.connect(self.confirm_export_xml)
+        right_column.addWidget(self.btn_save_xml)
+
         self.save_progress = QProgressBar()
         self.save_progress.setVisible(False)
         right_column.addWidget(self.save_progress)
@@ -288,7 +294,7 @@ class ChapterStudio(QMainWindow):
         if not self.active_video_path: return
         new_pos = max(0, self.media_player.position() + offset_ms)
         self.media_player.setPosition(new_pos)
-        if self.temp_wav: 
+        if self.temp_wav:
             pygame.mixer.music.set_pos(new_pos / 1000.0)
 
     def open_file_dialog(self):
@@ -303,9 +309,9 @@ class ChapterStudio(QMainWindow):
                 except: pass
 
             self.temp_wav = os.path.join(tempfile.gettempdir(), f"studio_{os.getpid()}.wav")
-            subprocess.run(['ffmpeg', '-y', '-i', file_path, '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', self.temp_wav], 
+            subprocess.run(['ffmpeg', '-y', '-i', file_path, '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', self.temp_wav],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
+
             pygame.mixer.music.load(self.temp_wav)
             self.media_player.setSource(QUrl.fromLocalFile(file_path))
             self.chapter_list.clear()
@@ -337,11 +343,11 @@ class ChapterStudio(QMainWindow):
         self.btn_run_scan.setText("Scanning...")
         self.btn_run_scan.setEnabled(False)
         self.scan_stdout_buffer = ""
-        
+
         args = [
             self.active_video_path,
             "-b", str(self.spin_thresh.value()),
-            "-s", str(int(self.spin_dur.value())) 
+            "-s", str(int(self.spin_dur.value()))
         ]
         logging.debug(f"Executing: {self.mkchap_path} {' '.join(args)}")
         self.scan_process.start(self.mkchap_path, args)
@@ -389,6 +395,11 @@ class ChapterStudio(QMainWindow):
         if QMessageBox.question(self, "Write", "Apply Chapter Markers to Video File? (This will OVERWRITE existing markers)") == QMessageBox.StandardButton.Yes:
             self.save_chapters_via_ffmpeg()
 
+    def confirm_export_xml(self):
+        if not self.active_video_path: return
+        if QMessageBox.question(self, "Write", "Apply Chapter Markers to XML File? (This will OVERWRITE existing XML file if exists)") == QMessageBox.StandardButton.Yes:
+            self.save_chapters_via_xml()
+
     def handle_ffmpeg_progress(self):
         data = self.save_process.readAllStandardError().data().decode()
         match = re.search(r"time=(\d+):(\d+):(\d+.\d+)", data)
@@ -425,6 +436,41 @@ class ChapterStudio(QMainWindow):
         args = ['-y', '-i', self.active_video_path, '-i', meta_path, '-map_metadata', '1', '-map_chapters', '1', '-codec', 'copy', self.temp_out]
         self.save_process.start('ffmpeg', args)
 
+    def save_chapters_via_xml(self):
+        self.btn_save_xml.setText("Exporting...")
+        self.btn_save_xml.setEnabled(False)
+
+        chapters = []
+        for i in range(self.chapter_list.count()):
+            item = self.chapter_list.item(i)
+            chapters.append({
+                'start': item.data(Qt.ItemDataRole.UserRole),
+                'title': item.data(Qt.ItemDataRole.DisplayRole + 1)
+            })
+        chapters.sort(key=lambda x: x['start'])
+        # MKV XML formatting
+        root = ET.Element("Chapters")
+        edition = ET.SubElement(root, "EditionEntry")
+        for i in range(len(chapters)):
+            atom = ET.SubElement(edition, "ChapterAtom")
+            start_time = QTime(0, 0).addMSecs(chapters[i]['start']).toString("HH:mm:ss.zzz")
+            ET.SubElement(atom, "ChapterTimeStart").text = start_time
+            if i + 1 < len(chapters):
+                end_time = QTime(0, 0).addMSecs(chapters[i + 1]['start']).toString("HH:mm:ss.zzz")
+            else:
+                end_time = QTime(0, 0).addMSecs(self.video_duration_ms).toString("HH:mm:ss.zzz")
+            ET.SubElement(atom, "ChapterTimeEnd").text = end_time
+            display = ET.SubElement(atom, "ChapterDisplay")
+            ET.SubElement(display, "ChapterString").text = chapters[i]['title']
+        xml_path = os.path.splitext(self.active_video_path)[0] + ".xml"
+
+        tree = ET.ElementTree(root)
+        ET.indent(tree, space="  ")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        QMessageBox.information(self, "Success", f"Chapters exported to:\n{xml_path}")
+        logging.info(f"Exported chapters to XML: {xml_path}")
+        self.btn_save_xml.setEnabled(True)
+        self.btn_save_xml.setText("EXPORT CHAPTERS TO XML")
     def on_ffmpeg_finished(self, exit_code):
         self.save_progress.setVisible(False)
         self.btn_save_video.setEnabled(True)
